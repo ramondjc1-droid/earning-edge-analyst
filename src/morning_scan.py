@@ -37,21 +37,27 @@ def run(dry_run: bool = False, lookahead: int = 10, verbose: bool = True) -> lis
     if verbose:
         print(f"[scan] {len(candidates)} names report within {lookahead} days.")
 
-    # Best play per ticker, then rank by score.
-    plays = []
+    max_main = f.get("max_main_picks", 3)
+    max_penny = f.get("max_penny_picks", 3)
+
+    # Best play per ticker, then split into main ($5-$50) vs penny (<$5).
+    all_plays = []
     for td in candidates:
         ps = scoring.best_play(td)
         if ps and ps.passes_gate:
-            plays.append(ps)
-    plays.sort(key=lambda p: p.score, reverse=True)
-    top = plays[:max_picks]
+            all_plays.append(ps)
+    all_plays.sort(key=lambda p: p.score, reverse=True)
+
+    main_picks = [p for p in all_plays if not cards.is_penny(p)][:max_main]
+    penny_picks = [p for p in all_plays if cards.is_penny(p)][:max_penny]
+    top = main_picks + penny_picks
 
     if verbose:
-        print(f"[scan] {len(plays)} plays cleared the gate; taking top {len(top)}.")
+        print(f"[scan] {len(all_plays)} plays cleared the gate; "
+              f"taking {len(main_picks)} main + {len(penny_picks)} penny.")
 
-    # Build, persist, and collect cards.
-    sent_cards = []
-    for ps in top:
+    # Build, persist, and collect cards per section.
+    def _persist_and_card(ps):
         narrative = narratives.generate(ps)
         pick_id = db.insert_pick({
             "pick_date": date.today().isoformat(),
@@ -66,9 +72,12 @@ def run(dry_run: bool = False, lookahead: int = 10, verbose: bool = True) -> lis
             "metrics_json": json.dumps(ps.data.as_dict(), default=str),
         })
         card = cards.pick_card(ps, narrative)
-        sent_cards.append((pick_id, card))
         if verbose:
             print(f"\n{'='*50}\n{card}\n")
+        return pick_id, card
+
+    main_cards = [_persist_and_card(ps) for ps in main_picks]
+    penny_cards = [_persist_and_card(ps) for ps in penny_picks]
 
     # Deliver.
     if not top:
@@ -79,15 +88,23 @@ def run(dry_run: bool = False, lookahead: int = 10, verbose: bool = True) -> lis
             send_message(body)
         return top
 
-    full = cards.header(len(top)) + "\n\n" + \
-        "\n\n".join(c for _, c in sent_cards) + "\n" + cards.footer()
+    # Build the full message with separate sections.
+    sections = [cards.header(len(main_picks), len(penny_picks))]
+    if main_cards:
+        sections.append(cards.section_header("💵 MAIN PICKS (under $50)"))
+        sections.extend(c for _, c in main_cards)
+    if penny_cards:
+        sections.append(cards.section_header("🪙 PENNY PICKS (under $5)"))
+        sections.extend(c for _, c in penny_cards)
+    sections.append(cards.footer())
+    full = "\n\n".join(sections)
 
     if dry_run:
         print("\n[dry-run] would send the above cards to Telegram. "
               "Re-run without --dry-run to deliver.")
     else:
         if send_message(full):
-            for pick_id, _ in sent_cards:
+            for pick_id, _ in main_cards + penny_cards:
                 db.mark_sent(pick_id)
             if verbose:
                 print(f"[scan] delivered {len(top)} picks to Telegram.")

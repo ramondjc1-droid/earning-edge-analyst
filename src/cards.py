@@ -16,12 +16,12 @@ def _bars(confidence: int) -> str:
 
 def _tier(price: float) -> str:
     if price < 5:
-        return "🪙 Penny (&lt;$5)"
-    if price < 50:
-        return "💵 Sub-$50"
-    if price < 200:
-        return "💰 Sub-$200"
-    return "🏦 Large-cap"
+        return "🪙 Penny"
+    return "💵 Sub-$50"
+
+
+def is_penny(ps: PlayScore) -> bool:
+    return ps.data.price < 5.0
 
 
 def pick_card(ps: PlayScore, narrative: str) -> str:
@@ -48,12 +48,22 @@ def pick_card(ps: PlayScore, narrative: str) -> str:
     return "\n".join(lines)
 
 
-def header(n: int, d: str | None = None) -> str:
+def header(n_main: int, n_penny: int, d: str | None = None) -> str:
     d = d or date.today().isoformat()
+    parts = []
+    if n_main:
+        parts.append(f"{n_main} main pick{'s' if n_main != 1 else ''}")
+    if n_penny:
+        parts.append(f"{n_penny} penny pick{'s' if n_penny != 1 else ''}")
+    summary = " + ".join(parts) if parts else "No plays"
     return (f"🔔 <b>EARNINGS EDGE — Morning Scan</b>\n"
             f"<i>{d}</i>\n"
-            f"Top {n} play{'s' if n != 1 else ''} today\n"
+            f"{summary} today\n"
             f"{'─' * 22}")
+
+
+def section_header(title: str) -> str:
+    return f"\n{'━' * 22}\n<b>{title}</b>\n{'━' * 22}"
 
 
 def footer() -> str:

@@ -43,7 +43,7 @@ def cmd_picks(_=None) -> str:
     rows = db.picks_for_date(date.today().isoformat())
     if not rows:
         return "No picks recorded today. Run the morning scan first."
-    out = [cards.header(len(rows))]
+    out = [cards.header(len(rows), 0)]
     for r in rows:
         out.append(f"\n${r['ticker']} — {r['play_type']} ({r['confidence']}/10)\n"
                    f"<i>{r['narrative']}</i>")

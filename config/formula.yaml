@@ -7,7 +7,9 @@ min_confidence_to_send: 5      # 0-10, picks below this are not sent
 max_picks_per_day: 6           # cap on number of picks delivered
 min_avg_volume: 500000         # skip illiquid names (shares/day) — keeps pennies tradeable
 min_price: 1.0                 # floor; >=1.0 still allows penny stocks ($1-5)
-max_price: 200.0               # cap; skip pricey names so picks stay affordable
+max_price: 50.0                # cap; skip pricey names so picks stay affordable
+max_penny_picks: 3             # dedicated penny slots (<$5)
+max_main_picks: 3              # main picks ($5-$50)
 
 # ---------------------------------------------------------------------------
 # PRE_RUNUP: buy before earnings, ride the pre-earnings drift, exit 1 day prior
