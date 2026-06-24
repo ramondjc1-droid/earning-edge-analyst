@@ -1,0 +1,55 @@
+name: Earnings Edge — Daily Scans
+
+# Scheduled earnings scans + heartbeats. GitHub Actions cron is UTC-only and
+# ignores US daylight saving, so we fire at every candidate UTC time and let
+# scripts/dispatch.py decide which stage (if any) runs based on the current
+# America/New_York time. Exactly one ET target matches per fire.
+#
+# ET windows -> UTC candidates (EDT / EST):
+#   07:00 ET morning_scan        11:00 / 12:00 UTC
+#   09:30 ET market_open_check   13:30 / 14:30 UTC
+#   16:30 ET post_market_update  20:30 / 21:30 UTC
+#   18:00 ET grader              22:00 / 23:00 UTC
+
+on:
+  schedule:
+    - cron: "0 11,12 * * 1-5"     # morning_scan
+    - cron: "30 13,14 * * 1-5"    # market_open_check
+    - cron: "30 20,21 * * 1-5"    # post_market_update
+    - cron: "0 22,23 * * 1-5"     # grader
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: "Force a stage (morning | open | post | grade). Leave blank to auto-pick by ET time."
+        required: false
+        default: ""
+
+concurrency:
+  group: earnings-edge-daily
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+      UNUSUAL_WHALES_API_KEY: ${{ secrets.UNUSUAL_WHALES_API_KEY }}
+      REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+      REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run stage
+        run: python scripts/dispatch.py ${{ github.event.inputs.stage }}

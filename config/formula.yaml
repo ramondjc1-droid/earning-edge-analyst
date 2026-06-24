@@ -1,0 +1,46 @@
+# Earnings Edge Analyst — tunable scoring weights
+# Adjust via the /tune command (e.g. "/tune iv_rank_weight 0.4")
+# All weights are applied in src/model/scoring.py
+
+# Global gates
+min_confidence_to_send: 5      # 0-10, picks below this are not sent
+max_picks_per_day: 5           # cap on number of picks delivered
+min_avg_volume: 500000         # skip illiquid names (shares/day)
+min_price: 5.0                 # skip penny stocks
+
+# ---------------------------------------------------------------------------
+# PRE_RUNUP: buy before earnings, ride the pre-earnings drift, exit 1 day prior
+# ---------------------------------------------------------------------------
+pre_runup:
+  enabled: true
+  weights:
+    momentum_20d: 0.30         # recent price momentum (20-day)
+    rel_volume: 0.20           # volume vs 30-day average
+    iv_rank: -0.10             # high IV slightly discourages a long-premium ride
+    days_to_earnings: 0.15     # closer to earnings = stronger drift signal
+    analyst_drift: 0.25        # positive estimate revisions
+  ideal_days_before: [3, 10]   # sweet spot window before report
+
+# ---------------------------------------------------------------------------
+# IV_CRUSH: sell premium into elevated IV, exit 1 day after the report
+# ---------------------------------------------------------------------------
+iv_crush:
+  enabled: true
+  weights:
+    iv_rank: 0.45              # the core signal — elevated implied volatility
+    iv_vs_historical: 0.25     # IV richly priced vs realized vol
+    liquidity: 0.15            # need liquid options to sell
+    stability: 0.15            # lower beta / steady name preferred
+  min_iv_rank: 50              # only consider names with IV rank >= this
+
+# ---------------------------------------------------------------------------
+# POST_MOMENTUM: enter after a confirmed beat, ride 3-5 days
+# ---------------------------------------------------------------------------
+post_momentum:
+  enabled: true
+  weights:
+    earnings_surprise: 0.35    # magnitude of the beat
+    gap_strength: 0.25         # opening gap on the news
+    volume_confirm: 0.20       # volume confirming the move
+    momentum_5d: 0.20          # follow-through
+  min_surprise_pct: 3.0        # require at least this % beat

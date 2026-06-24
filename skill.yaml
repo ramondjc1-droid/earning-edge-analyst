@@ -1,0 +1,20 @@
+name: earnings-edge-analyst
+version: "1.0.0"
+description: >
+  Automated daily earnings-play analyzer. Scans the earnings calendar, scores
+  names across three play types (PRE_RUNUP, IV_CRUSH, POST_MOMENTUM), generates
+  AI narratives, and delivers ranked picks to Telegram with daily grading.
+entrypoints:
+  morning_scan: src/morning_scan.py
+  market_open_check: src/market_open_check.py
+  post_market_update: src/post_market_update.py
+  grader: src/grader.py
+  command_handler: src/command_handler.py
+schedule_et:
+  - "07:00 -> morning_scan"
+  - "09:30 -> market_open_check"
+  - "16:30 -> post_market_update"
+  - "18:00 -> grader"
+disclaimer: >
+  Informational only. Not financial advice. AI-generated; verify independently
+  and manage your own risk.
