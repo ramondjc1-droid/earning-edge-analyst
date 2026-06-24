@@ -14,6 +14,16 @@ def _bars(confidence: int) -> str:
     return f"{full}{empty} {confidence}/10"
 
 
+def _tier(price: float) -> str:
+    if price < 5:
+        return "🪙 Penny (&lt;$5)"
+    if price < 50:
+        return "💵 Sub-$50"
+    if price < 200:
+        return "💰 Sub-$200"
+    return "🏦 Large-cap"
+
+
 def pick_card(ps: PlayScore, narrative: str) -> str:
     d = ps.data
     emoji = _EMOJI.get(ps.play_type, "•")
@@ -21,7 +31,7 @@ def pick_card(ps: PlayScore, narrative: str) -> str:
         f"{emoji} <b>${d.ticker}</b> — <b>{ps.play_type}</b>",
         f"Confidence: <code>{_bars(ps.confidence)}</code>",
         "",
-        f"💵 Price: <b>${d.price:,.2f}</b>",
+        f"💵 Price: <b>${d.price:,.2f}</b>  ·  {_tier(d.price)}",
     ]
     if d.earnings_date:
         when = f"{d.earnings_date}"

@@ -18,7 +18,7 @@ import narratives  # noqa: E402
 
 def _high_iv_name() -> TickerData:
     return TickerData(
-        ticker="FDX", ok=True, price=245.30, avg_volume=2_400_000, rel_volume=1.8,
+        ticker="FDX", ok=True, price=45.30, avg_volume=2_400_000, rel_volume=1.8,
         momentum_20d=4.2, momentum_5d=1.1, realized_vol=0.28, iv_atm=0.55,
         iv_rank=100.0, iv_vs_historical=1.96, beta=1.15, days_to_earnings=2,
         earnings_date=(date.today() + timedelta(days=2)).isoformat(),
@@ -46,6 +46,20 @@ def test_illiquid_name_fails_gate():
     d.avg_volume = 50_000  # below min_avg_volume
     best = scoring.best_play(d)
     assert not best.passes_gate
+
+
+def test_pricey_name_fails_gate():
+    d = _high_iv_name()
+    d.price = 950.0  # above max_price cap
+    best = scoring.best_play(d)
+    assert not best.passes_gate
+
+
+def test_penny_name_passes_price_floor():
+    d = _high_iv_name()
+    d.price = 3.20  # penny, above the $1 floor
+    best = scoring.best_play(d)
+    assert best.passes_gate
 
 
 def test_all_play_types_scored():

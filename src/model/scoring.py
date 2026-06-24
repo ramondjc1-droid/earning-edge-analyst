@@ -29,7 +29,9 @@ class PlayScore:
         f = formula()
         if self.confidence < f.get("min_confidence_to_send", 5):
             return False
-        if self.data.price < f.get("min_price", 5.0):
+        if self.data.price < f.get("min_price", 1.0):
+            return False
+        if self.data.price > f.get("max_price", 1e9):
             return False
         if self.data.avg_volume < f.get("min_avg_volume", 500000):
             return False

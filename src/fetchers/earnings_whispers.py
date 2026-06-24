@@ -49,6 +49,13 @@ WATCHLIST: list[str] = [
     "F", "GM", "RIVN", "LCID",
     # Misc high-beta movers often with juicy earnings IV
     "COIN", "HOOD", "DKNG", "RBLX", "AFRM",
+    # --- Affordable / sub-$50 names with liquid earnings reactions ---
+    "SOFI", "PLTR", "NIO", "RIG", "AAL", "CCL", "NCLH", "UAL", "DAL",
+    "GRAB", "BBD", "NU", "VALE", "KGC", "GOLD", "KMI", "GRPN",
+    "CHPT", "RUN", "FUBO", "DNA", "IONQ", "RKLB", "ACHR", "JOBY",
+    # --- Penny / low-priced (<$5) names that still trade big volume ---
+    "PLUG", "MARA", "RIOT", "CLSK", "BBAI", "SOUN", "LCID", "RIVN",
+    "WBD", "F", "SNAP", "PARA", "HBAN", "KEY", "RIG", "AMCR", "VTRS",
 ]
 # Drop any known-bad / delisted / renamed symbols.
 _BANNED = {"GPS", "GLD", "SQ", "FB", "TWTR"}
