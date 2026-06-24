@@ -24,8 +24,18 @@ def _call(method: str, payload: dict, timeout: int = 30) -> Optional[dict]:
     url = API.format(token=TELEGRAM_BOT_TOKEN, method=method)
     try:
         r = requests.post(url, json=payload, timeout=timeout)
-        r.raise_for_status()
-        return r.json()
+        body = {}
+        try:
+            body = r.json()
+        except Exception:
+            pass
+        if not r.ok:
+            # Surface Telegram's actual reason (e.g. "chat not found",
+            # "can't parse entities") instead of a bare HTTP status.
+            desc = body.get("description", r.text)
+            print(f"[telegram] {method} {r.status_code}: {desc}")
+            return body or None
+        return body
     except Exception as exc:
         print(f"[telegram] {method} failed: {exc}")
         return None
@@ -47,6 +57,14 @@ def send_message(text: str, chat_id: Optional[str] = None,
             "parse_mode": parse_mode,
             "disable_web_page_preview": True,
         })
+        # If HTML parsing tripped, retry the same chunk as plain text so a
+        # formatting glitch never silently swallows a pick.
+        if res and not res.get("ok") and "parse" in str(res.get("description", "")).lower():
+            res = _call("sendMessage", {
+                "chat_id": chat_id,
+                "text": chunk,
+                "disable_web_page_preview": True,
+            })
         ok = ok and bool(res and res.get("ok"))
     return ok
 
