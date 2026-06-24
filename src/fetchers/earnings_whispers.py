@@ -1,12 +1,11 @@
 """Earnings calendar source.
 
-Despite the legacy name, this no longer scrapes earningswhispers.com. It holds a
-curated, liquid watchlist and uses yfinance to determine which names report
-within a lookahead window. Stale/delisted symbols from the original handoff
-(GPS, GLD, SQ) have been removed.
+Holds a broad watchlist biased toward affordable (<$50) and penny (<$5) names
+that have liquid options and clean earnings reactions. Uses yfinance to determine
+which names report within a lookahead window.
 
-Expand WATCHLIST toward the full S&P 500 — or swap in a paid earnings calendar
-API — for broader coverage.
+The watchlist is deliberately large (~400+ tickers) because most names are NOT
+reporting in any given 2-week window. Stale/delisted symbols go in _BANNED.
 """
 from __future__ import annotations
 
@@ -15,55 +14,101 @@ from typing import Optional
 
 from fetchers import yfinance_fetcher as yfin
 
-# Curated liquid watchlist (~150 names across sectors). Mega/large-cap biased
-# because the strategies need liquid options and clean earnings reactions.
 WATCHLIST: list[str] = [
-    # Mega-cap tech
-    "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "AVGO", "ORCL",
-    "ADBE", "CRM", "AMD", "INTC", "QCOM", "TXN", "CSCO", "IBM", "NOW", "INTU",
-    "AMAT", "MU", "LRCX", "KLAC", "PANW", "SNPS", "CDNS", "ANET", "FTNT",
-    # Software / internet
-    "NFLX", "UBER", "ABNB", "SHOP", "SNOW", "PLTR", "CRWD", "DDOG", "NET",
-    "ZS", "MDB", "TEAM", "WDAY", "ROKU", "PINS", "SNAP", "SPOT",
-    # Financials
-    "JPM", "BAC", "WFC", "C", "GS", "MS", "SCHW", "BLK", "AXP", "V", "MA",
-    "PYPL", "COF", "USB", "PNC", "BX", "KKR",
-    # Healthcare / biotech / pharma
-    "UNH", "JNJ", "LLY", "PFE", "MRK", "ABBV", "TMO", "ABT", "DHR", "BMY",
-    "AMGN", "GILD", "CVS", "ISRG", "VRTX", "REGN", "MRNA", "BIIB",
-    # Consumer / retail
-    "WMT", "COST", "HD", "LOW", "TGT", "NKE", "SBUX", "MCD", "CMG", "LULU",
-    "DIS", "BKNG", "MAR", "DPZ", "ULTA", "ROST", "TJX", "DG", "DLTR",
-    # Consumer staples
-    "PG", "KO", "PEP", "PM", "MO", "MDLZ", "CL", "KHC", "GIS", "KMB",
-    # Industrials / transport
-    "CAT", "DE", "BA", "GE", "HON", "UPS", "FDX", "RTX", "LMT", "UNP", "MMM",
-    "EMR", "ETN", "PH",
-    # Energy
-    "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "OXY", "DVN",
-    # Communications / media
-    "T", "VZ", "TMUS", "CMCSA", "WBD",
-    # Semis / hardware extras
-    "MRVL", "ON", "MCHP", "STX", "WDC", "DELL", "HPQ", "SMCI",
-    # Autos / EV
-    "F", "GM", "RIVN", "LCID",
-    # Misc high-beta movers often with juicy earnings IV
-    "COIN", "HOOD", "DKNG", "RBLX", "AFRM",
-    # --- Affordable / sub-$50 names with liquid earnings reactions ---
-    "SOFI", "PLTR", "NIO", "RIG", "AAL", "CCL", "NCLH", "UAL", "DAL",
-    "GRAB", "BBD", "NU", "VALE", "KGC", "GOLD", "KMI", "GRPN",
-    "CHPT", "RUN", "FUBO", "DNA", "IONQ", "RKLB", "ACHR", "JOBY",
-    # --- Penny / low-priced (<$5) names that still trade big volume ---
-    "PLUG", "MARA", "RIOT", "CLSK", "BBAI", "SOUN", "LCID", "RIVN",
-    "WBD", "F", "SNAP", "PARA", "HBAN", "KEY", "RIG", "AMCR", "VTRS",
+    # =====================================================================
+    # SUB-$50 — the core of the picks (sorted by sector)
+    # =====================================================================
+
+    # Tech / software (affordable tier)
+    "PLTR", "SNAP", "PINS", "HOOD", "RBLX", "DKNG", "SOFI", "AFRM",
+    "FUBO", "GRPN", "WISH", "OPEN", "VUZI", "BIGC", "CLOV", "SKLZ",
+    "BMBL", "MTTR", "PATH", "AI", "BRZE", "CWAN", "ASAN", "WEAV",
+    "MNDY", "SEMR", "FRSH", "GTLB", "SPT", "BIRD",
+
+    # Fintech / finance (sub-$50)
+    "NU", "UPST", "LMND", "PSFE", "PAYO", "OWL", "GRAB", "BBD",
+    "ITUB", "SAN", "BBAR", "BMA", "MELI", "STNE", "PAGS",
+    "HBAN", "KEY", "CFG", "RF", "ZION", "CMA", "FHN", "WAL",
+    "ALLY", "SYF", "CACC", "LC", "LU",
+
+    # Biotech / pharma (sub-$50 — high IV around earnings)
+    "SNDL", "TLRY", "ACB", "CGC", "CRON",  # cannabis
+    "CPRX", "TEVA", "VTRS", "OGN", "AMRX",  # generic pharma
+    "GERN", "AGEN", "APLS", "CRSP", "BEAM", "NTLA", "EDIT",
+    "EXAS", "NTRA", "VEEV", "HIMS", "DOCS", "ACAD", "ARVN",
+    "RXRX", "DNLI", "FATE", "ALNY", "SRPT", "IONS",
+    "IOVA", "XNCR", "RCKT", "SAVA", "CORT", "OCUL",
+
+    # Consumer / retail (sub-$50)
+    "NKE", "DG", "DLTR", "BBY", "FIVE", "CROX", "SKX", "HBI",
+    "LEVI", "GPS", "VSCO", "WRBY", "RENT", "PRPL", "CSPR",
+    "BROS", "SHAK", "JACK", "WING", "NDLS", "LOCO", "ARCO",
+    "BJ", "OLLI", "CATO", "RVLV", "REAL", "CURV", "XPOF",
+
+    # Industrials / materials (sub-$50)
+    "CLF", "X", "AA", "VALE", "RIG", "NOV", "HP", "PTEN",
+    "SWN", "AR", "RRC", "CNX", "CTRA", "CHRD", "MUR", "SM",
+    "KGC", "GOLD", "HL", "AG", "FSM", "PAAS", "MAG", "EGO",
+    "BTG", "AUY", "SSRM", "GATO",
+
+    # Airlines / travel / cruise (sub-$50, high beta)
+    "AAL", "DAL", "UAL", "SAVE", "JBLU", "ALK", "HA",
+    "CCL", "NCLH", "RCL",
+    "ABNB", "EXPE", "TRIP", "LIND", "BKNG",
+    "MGM", "WYNN", "CZR", "PENN", "RSI",
+
+    # Autos / EV (sub-$50)
+    "F", "GM", "RIVN", "LCID", "XPEV", "LI", "NIO", "GOEV",
+    "QS", "CHPT", "BLNK", "EVGO", "DCFC", "MULN",
+    "FSR", "PSNY", "WKHS", "NKLA", "REE", "HYLN",
+
+    # Clean energy (sub-$50)
+    "PLUG", "RUN", "ENPH", "SEDG", "ARRY", "MAXN", "NOVA",
+    "STEM", "BLDP", "FCEL", "BE", "SPWR",
+
+    # Media / entertainment (sub-$50)
+    "WBD", "PARA", "LYV", "ROKU", "SPOT", "SONO", "GENI",
+    "CARG", "YELP", "ANGI", "ZG", "OPRA", "PUBM",
+
+    # Telecom / connectivity (sub-$50)
+    "T", "LUMN", "ASTS", "IRDM", "GSAT",
+    "DISH", "SATS", "GILT",
+
+    # REITs / real estate (sub-$50)
+    "AGNC", "NLY", "MFA", "RWT", "TWO", "ARR", "BRMK",
+    "MPW", "SBRA", "OHI", "GMRE",
+
+    # =====================================================================
+    # PENNY STOCKS (<$5) — high volume movers with real earnings
+    # =====================================================================
+    "MARA", "RIOT", "CLSK", "BITF", "HUT", "ARBK",  # crypto miners
+    "SOUN", "BBAI", "GFAI", "BFRG",  # AI penny plays
+    "DNA", "ACHR", "JOBY", "RKLB", "LUNR", "RDW",  # space / drones
+    "IONQ", "RGTI", "QUBT",  # quantum computing
+    "VFS", "FFIE", "RIDE",  # EV pennies
+    "CLVR", "IQ", "HUYA", "BILI",  # China internet
+    "BYND", "IRBT", "PERI", "GDRX", "SDC",
+    "APRE", "AMCR", "CIEN", "TRUP", "PETS",
+    "PRCH", "OLO", "COUR", "UDMY",  # ed-tech / proptech
+
+    # =====================================================================
+    # LIQUID MID-CAPS ($20-$50) that frequently produce IV crush plays
+    # =====================================================================
+    "KMI", "MO", "T", "VZ", "WBA", "PFE", "INTC", "CSCO",
+    "KHC", "KR", "GOLD", "HAL", "BKR", "SLB",
+    "SNAP", "LYFT", "UBER", "COIN",
+    "AMD", "MU", "MRVL", "ON", "STX", "WDC",
+    "HPQ", "DELL", "SMCI",
+    "PYPL", "SQ", "SHOP", "ETSY",
+    "BAC", "C", "USB", "SCHW",
 ]
-# Drop any known-bad / delisted / renamed symbols.
-_BANNED = {"GPS", "GLD", "SQ", "FB", "TWTR"}
+
+_BANNED = {"GPS", "GLD", "FB", "TWTR", "SQ"}
 WATCHLIST = [t for t in dict.fromkeys(WATCHLIST) if t not in _BANNED]
 
 
 def upcoming_earnings(
-    lookahead_days: int = 10,
+    lookahead_days: int = 14,
     tickers: Optional[list[str]] = None,
     skip: Optional[set[str]] = None,
 ) -> list[yfin.TickerData]:

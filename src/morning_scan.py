@@ -117,8 +117,8 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(description="Earnings Edge — morning scan")
     p.add_argument("--dry-run", action="store_true",
                    help="preview picks without sending to Telegram")
-    p.add_argument("--lookahead", type=int, default=10,
-                   help="earnings lookahead window in days (default 10)")
+    p.add_argument("--lookahead", type=int, default=14,
+                   help="earnings lookahead window in days (default 14)")
     p.add_argument("--quiet", action="store_true", help="suppress progress output")
     args = p.parse_args(argv)
     run(dry_run=args.dry_run, lookahead=args.lookahead, verbose=not args.quiet)

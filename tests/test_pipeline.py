@@ -43,7 +43,7 @@ def test_low_iv_does_not_pick_iv_crush():
 
 def test_illiquid_name_fails_gate():
     d = _high_iv_name()
-    d.avg_volume = 50_000  # below min_avg_volume
+    d.avg_volume = 50_000  # below min_avg_volume (200k)
     best = scoring.best_play(d)
     assert not best.passes_gate
 

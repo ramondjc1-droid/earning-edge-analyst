@@ -3,9 +3,9 @@
 # All weights are applied in src/model/scoring.py
 
 # Global gates
-min_confidence_to_send: 5      # 0-10, picks below this are not sent
+min_confidence_to_send: 4      # 0-10, picks below this are not sent
 max_picks_per_day: 6           # cap on number of picks delivered
-min_avg_volume: 500000         # skip illiquid names (shares/day) — keeps pennies tradeable
+min_avg_volume: 200000         # skip illiquid names (shares/day) — lowered for penny coverage
 min_price: 1.0                 # floor; >=1.0 still allows penny stocks ($1-5)
 max_price: 50.0                # cap; skip pricey names so picks stay affordable
 max_penny_picks: 3             # dedicated penny slots (<$5)
