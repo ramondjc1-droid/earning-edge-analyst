@@ -150,3 +150,28 @@ def best_play(d: TickerData) -> Optional[PlayScore]:
     """Return the single highest-confidence play for a ticker."""
     scores = score_all(d)
     return max(scores, key=lambda s: s.score) if scores else None
+
+
+def score_momentum(d: TickerData) -> PlayScore:
+    """Off-season TRENDING play — pure momentum/volume/IV, no earnings needed.
+
+    Used to fill the card when few names are reporting. Rewards names that are
+    moving (20d + 5d momentum aligned), trading on elevated relative volume, and
+    carrying juiced implied vol.
+    """
+    cfg = formula().get("momentum", {})
+    w = cfg.get("weights", {
+        "momentum_20d": 0.35, "momentum_5d": 0.25,
+        "rel_volume": 0.25, "iv_rank": 0.15,
+    })
+    feats = {
+        "momentum_20d": _norm_momentum(d.momentum_20d),
+        "momentum_5d": _norm_momentum(d.momentum_5d),
+        "rel_volume": _norm_rel_volume(d.rel_volume),
+        "iv_rank": _clip01(d.iv_rank / 100.0),
+    }
+    contributions = {k: feats[k] * w[k] for k in w}
+    denom = sum(w.values()) or 1.0
+    score = _clip01(sum(contributions.values()) / denom)
+    return PlayScore(d.ticker, "MOMENTUM", score, _to_confidence(score),
+                     contributions, d)

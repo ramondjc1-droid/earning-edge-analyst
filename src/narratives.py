@@ -13,6 +13,7 @@ _PLAY_BLURB = {
     "PRE_RUNUP": "buy before earnings and ride the pre-report drift, exiting ~1 day before the report",
     "IV_CRUSH": "sell elevated options premium before earnings, exiting ~1 day after the report",
     "POST_MOMENTUM": "enter after a confirmed beat and ride 3-5 days of follow-through",
+    "MOMENTUM": "a trending/high-IV momentum name (no imminent earnings) — a swing/watchlist idea, not an earnings event play",
 }
 
 SYSTEM = (
@@ -26,12 +27,19 @@ SYSTEM = (
 def _fallback(ps: PlayScore) -> str:
     d = ps.data
     blurb = _PLAY_BLURB.get(ps.play_type, ps.play_type)
-    ed = d.earnings_date or "an upcoming date"
+    # Only mention an earnings date when there actually is one (trending names
+    # have none).
+    if d.earnings_date:
+        when = f" Reports {d.earnings_date}"
+        if d.days_to_earnings is not None:
+            when += f", in {d.days_to_earnings} days"
+        when += "."
+    else:
+        when = ""
     return (
         f"${d.ticker} screens as a {ps.play_type} setup (confidence {ps.confidence}/10). "
-        f"The play: {blurb}. Reports {ed}"
-        + (f", in {d.days_to_earnings} days" if d.days_to_earnings is not None else "")
-        + f". Context: 20-day momentum {d.momentum_20d:+.1f}%, relative volume "
+        f"The play: {blurb}.{when}"
+        f" Context: 20-day momentum {d.momentum_20d:+.1f}%, relative volume "
         f"{d.rel_volume:.1f}x, IV-rank proxy {d.iv_rank:.0f}. "
         "Informational only — not financial advice."
     )

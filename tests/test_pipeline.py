@@ -62,6 +62,19 @@ def test_penny_name_passes_price_floor():
     assert best.passes_gate
 
 
+def test_momentum_scores_trending_name():
+    d = _high_iv_name()
+    d.earnings_date = None  # no imminent earnings
+    d.days_to_earnings = None
+    d.momentum_20d = 18.0
+    d.momentum_5d = 7.0
+    d.rel_volume = 2.5
+    ms = scoring.score_momentum(d)
+    assert ms.play_type == "MOMENTUM"
+    assert ms.confidence >= 5
+    assert ms.passes_gate
+
+
 def test_all_play_types_scored():
     scores = scoring.score_all(_high_iv_name())
     assert {s.play_type for s in scores} == set(scoring.PLAY_TYPES)

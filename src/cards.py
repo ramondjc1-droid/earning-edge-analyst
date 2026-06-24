@@ -5,7 +5,7 @@ from datetime import date
 
 from model.scoring import PlayScore
 
-_EMOJI = {"PRE_RUNUP": "🚀", "IV_CRUSH": "💥", "POST_MOMENTUM": "📈"}
+_EMOJI = {"PRE_RUNUP": "🚀", "IV_CRUSH": "💥", "POST_MOMENTUM": "📈", "MOMENTUM": "🔥"}
 
 
 def _bars(confidence: int) -> str:
@@ -48,14 +48,17 @@ def pick_card(ps: PlayScore, narrative: str) -> str:
     return "\n".join(lines)
 
 
-def header(n_main: int, n_penny: int, d: str | None = None) -> str:
+def header(n_main: int, n_penny: int, n_momentum: int = 0,
+           d: str | None = None) -> str:
     d = d or date.today().isoformat()
     parts = []
     if n_main:
-        parts.append(f"{n_main} main pick{'s' if n_main != 1 else ''}")
+        parts.append(f"{n_main} main")
     if n_penny:
-        parts.append(f"{n_penny} penny pick{'s' if n_penny != 1 else ''}")
-    summary = " + ".join(parts) if parts else "No plays"
+        parts.append(f"{n_penny} penny")
+    if n_momentum:
+        parts.append(f"{n_momentum} trending")
+    summary = " + ".join(parts) + " picks" if parts else "No plays"
     return (f"🔔 <b>EARNINGS EDGE — Morning Scan</b>\n"
             f"<i>{d}</i>\n"
             f"{summary} today\n"

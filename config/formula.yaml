@@ -11,6 +11,19 @@ max_price: 50.0                # cap; skip pricey names so picks stay affordable
 max_penny_picks: 3             # dedicated penny slots (<$5)
 max_main_picks: 3              # main picks ($5-$50)
 
+# Off-season TRENDING mode: surfaces high-momentum / high-IV names even when
+# they have NO imminent earnings, so the card stays full between earnings
+# seasons. These are momentum screens, not earnings plays.
+momentum:
+  enabled: true
+  max_momentum_picks: 3        # trending slots
+  min_confidence: 5            # trending names must clear this (0-10)
+  weights:
+    momentum_20d: 0.35
+    momentum_5d: 0.25
+    rel_volume: 0.25
+    iv_rank: 0.15
+
 # ---------------------------------------------------------------------------
 # PRE_RUNUP: buy before earnings, ride the pre-earnings drift, exit 1 day prior
 # ---------------------------------------------------------------------------

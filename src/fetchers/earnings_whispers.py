@@ -107,30 +107,42 @@ _BANNED = {"GPS", "GLD", "FB", "TWTR", "SQ"}
 WATCHLIST = [t for t in dict.fromkeys(WATCHLIST) if t not in _BANNED]
 
 
-def upcoming_earnings(
-    lookahead_days: int = 14,
+def fetch_all(
     tickers: Optional[list[str]] = None,
     skip: Optional[set[str]] = None,
 ) -> list[yfin.TickerData]:
-    """Return TickerData for names reporting within ``lookahead_days``.
+    """Fetch every watchlist name once and return all that resolved OK.
 
-    Each returned object already carries the full metric set, so callers can
-    score directly without re-fetching.
+    Callers can then split the result into earnings-window names and
+    momentum/trending names without paying for a second fetch pass.
     """
     tickers = tickers or WATCHLIST
     skip = skip or set()
-    results: list[yfin.TickerData] = []
+    out: list[yfin.TickerData] = []
     for t in tickers:
         if t in skip:
             continue
         td = yfin.fetch(t)
-        if not td.ok:
-            continue
-        if td.days_to_earnings is None:
-            continue
-        if 0 <= td.days_to_earnings <= lookahead_days:
-            results.append(td)
-    return results
+        if td.ok:
+            out.append(td)
+    return out
+
+
+def upcoming_earnings(
+    lookahead_days: int = 14,
+    tickers: Optional[list[str]] = None,
+    skip: Optional[set[str]] = None,
+    prefetched: Optional[list[yfin.TickerData]] = None,
+) -> list[yfin.TickerData]:
+    """Return TickerData for names reporting within ``lookahead_days``.
+
+    Pass ``prefetched`` (from :func:`fetch_all`) to avoid re-fetching.
+    """
+    pool = prefetched if prefetched is not None else fetch_all(tickers, skip)
+    return [
+        td for td in pool
+        if td.days_to_earnings is not None and 0 <= td.days_to_earnings <= lookahead_days
+    ]
 
 
 def force_fetch(ticker: str) -> yfin.TickerData:
