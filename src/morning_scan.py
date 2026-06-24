@@ -23,7 +23,7 @@ from model import scoring
 from telegram_bot import send_message
 
 
-def run(dry_run: bool = False, lookahead: int = 10, verbose: bool = True) -> list:
+def run(dry_run: bool = False, lookahead: int = 21, verbose: bool = True) -> list:
     db.init_db()
     f = formula()
     max_picks = f.get("max_picks_per_day", 5)
@@ -117,8 +117,8 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(description="Earnings Edge — morning scan")
     p.add_argument("--dry-run", action="store_true",
                    help="preview picks without sending to Telegram")
-    p.add_argument("--lookahead", type=int, default=14,
-                   help="earnings lookahead window in days (default 14)")
+    p.add_argument("--lookahead", type=int, default=21,
+                   help="earnings lookahead window in days (default 21)")
     p.add_argument("--quiet", action="store_true", help="suppress progress output")
     args = p.parse_args(argv)
     run(dry_run=args.dry_run, lookahead=args.lookahead, verbose=not args.quiet)
