@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sonic in World 1-1</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #1a1a2e;
+    color: #fff;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100%;
+  }
+  #wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+  }
+  #game {
+    background: #5c94fc; /* classic Mario sky blue */
+    image-rendering: pixelated;
+    border: 4px solid #000;
+    box-shadow: 0 0 30px rgba(0,0,0,0.6);
+    max-width: 100%;
+  }
+  #hud {
+    margin-top: 8px;
+    font-size: 14px;
+    letter-spacing: 1px;
+    text-shadow: 2px 2px 0 #000;
+  }
+  #hint {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #b8c6ff;
+  }
+  .blue { color: #38c6ff; }
+  .gold { color: #ffd700; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="800" height="480"></canvas>
+  <div id="hud">
+    <span class="blue">SONIC</span> &nbsp; RINGS <span id="rings" class="gold">000</span>
+    &nbsp; LIVES <span id="lives">3</span> &nbsp; WORLD 1-1 &nbsp; TIME <span id="time">400</span>
+  </div>
+  <div id="hint">← → move &nbsp;|&nbsp; SPACE / ↑ jump (hold to jump higher) &nbsp;|&nbsp; SHIFT spin-dash run &nbsp;|&nbsp; R restart</div>
+</div>
+<script>
+(() => {
+'use strict';
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const TILE = 32;
+
+// ---- HUD elements ----
+const elRings = document.getElementById('rings');
+const elLives = document.getElementById('lives');
+const elTime  = document.getElementById('time');
+
+// ---------------------------------------------------------------------------
+// LEVEL MAP  (Mario Bros World 1-1 style, re-skinned for Sonic)
+//   Legend:
+//     X = ground / brick block        B = breakable brick
+//     ? = item block (gives a ring)    P = solid pipe
+//     o = ring (collectible)           G = Goomba-style "Motobug" enemy
+//     | = flagpole   F = flag/goal     . = empty
+// Each character is one TILE (32px). Rows are drawn top -> bottom.
+// ---------------------------------------------------------------------------
+const MAP = [
+"................................................................................................................................",
+"................................................................................................................................",
+"................................................................................................................................",
+"...........................?....................................................................................................",
+"................................................................................................................|...............",
+"................................o.o.o...........................................................................|...............",
+"..............?...B?B?B.........................................BB.......BB......................................|...............",
+"................................................................................................o.o.o..........|...............",
+"...................................................G..................G.........................................|...............",
+"..........o.o...................................................................................................|...............",
+".....................PP....................PP..............G............BBBB.............G....G.................F|...............",
+"...........G.........PP.....G..............PP..........................................................XXXX......|...............",
+"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.....XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.....XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.....XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.....XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+];
+
+const ROWS = MAP.length;
+const COLS = MAP[0].length;
+const LEVEL_W = COLS * TILE;
+const LEVEL_H = ROWS * TILE;
+
+// Build solid-tile lookup + dynamic entity lists
+const solids = [];      // {x,y,type}
+const tileGrid = [];    // tileGrid[row][col] = char ('' if non-solid)
+const rings = [];
+const enemies = [];
+const itemBlocks = [];
+let goal = null;
+
+function isSolidChar(c){ return c === 'X' || c === 'B' || c === '?' || c === 'P'; }
+
+for (let r = 0; r < ROWS; r++) {
+  tileGrid[r] = [];
+  for (let c = 0; c < COLS; c++) {
+    const ch = MAP[r][c];
+    tileGrid[r][c] = isSolidChar(ch) ? ch : '';
+    const x = c * TILE, y = r * TILE;
+    if (isSolidChar(ch)) {
+      solids.push({ x, y, w: TILE, h: TILE, type: ch });
+      if (ch === '?') itemBlocks.push({ x, y, used: false });
+    } else if (ch === 'o') {
+      rings.push({ x: x + 8, y: y + 8, w: 16, h: 16, taken: false, t: Math.random()*Math.PI*2 });
+    } else if (ch === 'G') {
+      enemies.push({ x, y: y + 4, w: 28, h: 28, vx: -0.7, alive: true, t: 0 });
+    } else if (ch === 'F') {
+      goal = { x: x + 8, y, w: 16, h: TILE };
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PLAYER  (Sonic)
+// ---------------------------------------------------------------------------
+const START = { x: 2 * TILE, y: 9 * TILE };
+const player = {
+  x: START.x, y: START.y, w: 26, h: 30,
+  vx: 0, vy: 0,
+  onGround: false,
+  facing: 1,
+  spin: 0,        // visual spin angle when rolling/jumping
+  rolling: false,
+  jumpHeld: false,
+  dead: false,
+  win: false,
+};
+
+let ringCount = 0;
+let lives = 3;
+let timeLeft = 400;
+let timeTick = 0;
+let cameraX = 0;
+let messageTimer = 0;
+let message = '';
+
+// ---- physics constants ----
+const GRAV = 0.8;
+const MOVE = 0.6;
+const RUN_MOVE = 0.9;
+const FRICTION = 0.82;
+const MAX_SPD = 5;
+const MAX_RUN = 8.5;
+const JUMP_V = -13.5;
+const JUMP_CUT = 0.45; // variable jump height
+
+// ---- input ----
+const keys = {};
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+  if (e.code === 'KeyR') resetLevel(false);
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+
+function resetLevel(loseLife) {
+  if (loseLife) {
+    lives--;
+    if (lives < 0) { lives = 3; ringCount = 0; } // full restart on game over
+  }
+  player.x = START.x; player.y = START.y;
+  player.vx = 0; player.vy = 0;
+  player.dead = false; player.win = false; player.spin = 0;
+  timeLeft = 400; timeTick = 0;
+  for (const r of rings) r.taken = false;
+  for (const en of enemies) en.alive = true;
+  // reset enemy positions roughly by re-reading is complex; keep simple:
+}
+
+// ---------------------------------------------------------------------------
+// COLLISION
+// ---------------------------------------------------------------------------
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function collideX() {
+  for (const s of solids) {
+    if (rectsOverlap(player, s)) {
+      if (player.vx > 0) player.x = s.x - player.w;
+      else if (player.vx < 0) player.x = s.x + s.w;
+      player.vx = 0;
+    }
+  }
+}
+
+function collideY() {
+  player.onGround = false;
+  for (const s of solids) {
+    if (rectsOverlap(player, s)) {
+      if (player.vy > 0) {
+        player.y = s.y - player.h;
+        player.vy = 0;
+        player.onGround = true;
+      } else if (player.vy < 0) {
+        player.y = s.y + s.h;
+        player.vy = 0;
+        // head-bonk: pop an item block if it's a '?'
+        const col = Math.floor((s.x + TILE/2) / TILE);
+        const row = Math.floor((s.y + TILE/2) / TILE);
+        if (s.type === '?' ) {
+          for (const ib of itemBlocks) {
+            if (!ib.used && ib.x === s.x && ib.y === s.y) {
+              ib.used = true;
+              s.type = 'X'; // becomes used solid
+              ringCount += 5;
+              flash('+5 RINGS!');
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// UPDATE
+// ---------------------------------------------------------------------------
+function update() {
+  if (player.win) {
+    player.x += 1.5;
+    player.vy += GRAV;
+    player.y += player.vy;
+    collideY();
+    if (player.x > goal.x + 4*TILE) { /* hold */ }
+    return;
+  }
+  if (player.dead) return;
+
+  const running = keys['ShiftLeft'] || keys['ShiftRight'];
+  const accel = running ? RUN_MOVE : MOVE;
+  const maxspd = running ? MAX_RUN : MAX_SPD;
+
+  if (keys['ArrowLeft'])  { player.vx -= accel; player.facing = -1; }
+  if (keys['ArrowRight']) { player.vx += accel; player.facing = 1; }
+  if (!keys['ArrowLeft'] && !keys['ArrowRight']) player.vx *= FRICTION;
+
+  player.vx = Math.max(-maxspd, Math.min(maxspd, player.vx));
+
+  // jump (variable height)
+  const jumpKey = keys['Space'] || keys['ArrowUp'];
+  if (jumpKey && player.onGround && !player.jumpHeld) {
+    player.vy = JUMP_V;
+    player.onGround = false;
+    player.jumpHeld = true;
+  }
+  if (!jumpKey) {
+    player.jumpHeld = false;
+    if (player.vy < 0) player.vy *= JUMP_CUT; // cut jump short
+  }
+
+  // gravity
+  player.vy += GRAV;
+  if (player.vy > 16) player.vy = 16;
+
+  // integrate + collide axis-separated
+  player.x += player.vx;
+  collideX();
+  player.y += player.vy;
+  collideY();
+
+  // rolling/spin visual
+  player.rolling = !player.onGround || Math.abs(player.vx) > 3;
+  if (player.rolling) player.spin += Math.abs(player.vx) * 0.05 + 0.25;
+
+  // world bounds
+  if (player.x < 0) { player.x = 0; player.vx = 0; }
+  if (player.x + player.w > LEVEL_W) { player.x = LEVEL_W - player.w; player.vx = 0; }
+
+  // fell in a pit
+  if (player.y > LEVEL_H + 80) {
+    die();
+  }
+
+  // rings
+  for (const r of rings) {
+    if (!r.taken && rectsOverlap(player, r)) {
+      r.taken = true;
+      ringCount++;
+      flash('RING +1');
+    }
+    r.t += 0.15;
+  }
+
+  // enemies
+  for (const en of enemies) {
+    if (!en.alive) continue;
+    en.t += 0.1;
+    en.x += en.vx;
+    // patrol: turn around at edges / walls using a simple ground probe
+    const aheadX = en.vx < 0 ? en.x - 2 : en.x + en.w + 2;
+    const footRow = Math.floor((en.y + en.h + 4) / TILE);
+    const aheadCol = Math.floor(aheadX / TILE);
+    const sideCol  = Math.floor((en.vx < 0 ? en.x : en.x + en.w) / TILE);
+    const midRow   = Math.floor((en.y + en.h/2) / TILE);
+    const groundAhead = tileGrid[footRow] && isSolidChar(tileGrid[footRow][aheadCol] || '');
+    const wallAhead   = tileGrid[midRow] && isSolidChar(tileGrid[midRow][sideCol] || '');
+    if (!groundAhead || wallAhead) en.vx *= -1;
+
+    if (rectsOverlap(player, en)) {
+      const stomping = player.vy > 0 && (player.y + player.h) - en.y < 18;
+      if (stomping) {
+        en.alive = false;
+        player.vy = JUMP_V * 0.6; // bounce
+        ringCount += 2;
+        flash('BADNIK BUSTED! +2');
+      } else if (ringCount > 0) {
+        // lose rings instead of dying (Sonic style)
+        ringCount = Math.max(0, ringCount - 10);
+        player.vx = -player.facing * 6;
+        player.vy = -6;
+        flash('OUCH! lost rings');
+      } else {
+        die();
+      }
+    }
+  }
+
+  // goal
+  if (goal && rectsOverlap(player, goal)) {
+    player.win = true;
+    flash('YOU CLEARED WORLD 1-1!  GOTTA GO FAST!');
+  }
+
+  // camera follows player
+  cameraX = player.x - W * 0.35;
+  cameraX = Math.max(0, Math.min(cameraX, LEVEL_W - W));
+
+  // timer
+  timeTick++;
+  if (timeTick >= 40) { timeTick = 0; timeLeft--; if (timeLeft <= 0) die(); }
+
+  if (messageTimer > 0) messageTimer--;
+}
+
+function die() {
+  if (player.dead) return;
+  player.dead = true;
+  player.vy = -8;
+  flash('SONIC DOWN!');
+  setTimeout(() => resetLevel(true), 1100);
+}
+
+function flash(msg) { message = msg; messageTimer = 90; }
+
+// ---------------------------------------------------------------------------
+// RENDER
+// ---------------------------------------------------------------------------
+function drawCloud(x, y, s) {
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(x, y, 14*s, 0, Math.PI*2);
+  ctx.arc(x+16*s, y+4*s, 18*s, 0, Math.PI*2);
+  ctx.arc(x+34*s, y, 14*s, 0, Math.PI*2);
+  ctx.arc(x+16*s, y-8*s, 14*s, 0, Math.PI*2);
+  ctx.fill();
+}
+
+function drawHill(x, y, s) {
+  ctx.fillStyle = '#00a800';
+  ctx.beginPath();
+  ctx.moveTo(x - 60*s, y);
+  ctx.quadraticCurveTo(x, y - 70*s, x + 60*s, y);
+  ctx.fill();
+  ctx.fillStyle = '#008000';
+  ctx.beginPath();
+  ctx.arc(x - 18*s, y - 22*s, 8*s, 0, Math.PI*2);
+  ctx.arc(x + 14*s, y - 30*s, 8*s, 0, Math.PI*2);
+  ctx.fill();
+}
+
+function drawBush(x, y, s) {
+  ctx.fillStyle = '#00b800';
+  ctx.beginPath();
+  ctx.arc(x, y, 12*s, 0, Math.PI*2);
+  ctx.arc(x+14*s, y+2*s, 14*s, 0, Math.PI*2);
+  ctx.arc(x+28*s, y, 12*s, 0, Math.PI*2);
+  ctx.fill();
+}
+
+function drawTile(s, sx) {
+  const x = s.x - sx, y = s.y;
+  if (x + TILE < 0 || x > W) return;
+  if (s.type === 'X') {
+    // ground / brick
+    ctx.fillStyle = '#c84c0c';
+    ctx.fillRect(x, y, TILE, TILE);
+    ctx.fillStyle = '#e09050';
+    ctx.fillRect(x+2, y+2, TILE-4, 6);
+    ctx.strokeStyle = '#7a2e08';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x+1, y+1, TILE-2, TILE-2);
+    ctx.beginPath();
+    ctx.moveTo(x+TILE/2, y); ctx.lineTo(x+TILE/2, y+TILE/2);
+    ctx.moveTo(x, y+TILE/2); ctx.lineTo(x+TILE, y+TILE/2);
+    ctx.stroke();
+  } else if (s.type === 'B') {
+    ctx.fillStyle = '#c84c0c';
+    ctx.fillRect(x, y, TILE, TILE);
+    ctx.strokeStyle = '#7a2e08';
+    ctx.lineWidth = 2;
+    for (let i=0;i<2;i++) for (let j=0;j<2;j++)
+      ctx.strokeRect(x+1+i*(TILE/2), y+1+j*(TILE/2), TILE/2-2, TILE/2-2);
+  } else if (s.type === '?') {
+    ctx.fillStyle = '#f8b800';
+    ctx.fillRect(x, y, TILE, TILE);
+    ctx.strokeStyle = '#a05000';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x+2, y+2, TILE-4, TILE-4);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 22px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('?', x+TILE/2, y+TILE-8);
+  } else if (s.type === 'P') {
+    ctx.fillStyle = '#00a800';
+    ctx.fillRect(x, y, TILE, TILE);
+    ctx.fillStyle = '#00d000';
+    ctx.fillRect(x+3, y+3, 6, TILE-3);
+    ctx.strokeStyle = '#006000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x+1, y+1, TILE-2, TILE-2);
+  }
+}
+
+function drawRing(r, sx) {
+  const x = r.x - sx + 8, y = r.y + 8 + Math.sin(r.t)*3;
+  const sw = Math.abs(Math.cos(r.t)); // spin -> width
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(0.4 + sw*0.6, 1);
+  ctx.strokeStyle = '#ffd700';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(0, 0, 9, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.strokeStyle = '#fff7b0';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(0, 0, 9, -1, 0.6);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawEnemy(en, sx) {
+  const x = en.x - sx, y = en.y;
+  const wob = Math.sin(en.t*3)*2;
+  // Motobug-ish red badnik
+  ctx.fillStyle = '#c0392b';
+  ctx.beginPath();
+  ctx.arc(x+en.w/2, y+en.h/2+wob, en.w/2, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#222';
+  ctx.fillRect(x+4, y+en.h-6+wob, 6, 6);
+  ctx.fillRect(x+en.w-10, y+en.h-6+wob, 6, 6);
+  // eye
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(x+en.w/2 + en.vx*3, y+en.h/2-2+wob, 5, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.arc(x+en.w/2 + en.vx*4, y+en.h/2-2+wob, 2.5, 0, Math.PI*2);
+  ctx.fill();
+}
+
+function drawSonic(sx) {
+  const x = player.x - sx + player.w/2;
+  const y = player.y + player.h/2;
+  ctx.save();
+  ctx.translate(x, y);
+
+  if (player.rolling && !player.onGround) {
+    // spin ball
+    ctx.rotate(player.spin);
+    ctx.fillStyle = '#1565c0';
+    ctx.beginPath();
+    ctx.arc(0, 0, 16, 0, Math.PI*2);
+    ctx.fill();
+    // spikes
+    ctx.fillStyle = '#0d47a1';
+    for (let i=0;i<6;i++){
+      const a = i/6*Math.PI*2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a)*8, Math.sin(a)*8);
+      ctx.lineTo(Math.cos(a)*18, Math.sin(a)*18);
+      ctx.lineTo(Math.cos(a+0.3)*8, Math.sin(a+0.3)*8);
+      ctx.fill();
+    }
+    ctx.restore();
+    return;
+  }
+
+  ctx.scale(player.facing, 1);
+  // body (blue)
+  ctx.fillStyle = '#1976d2';
+  ctx.beginPath();
+  ctx.arc(0, 0, 14, 0, Math.PI*2);
+  ctx.fill();
+  // spikes back
+  ctx.fillStyle = '#1565c0';
+  for (let i=0;i<3;i++){
+    ctx.beginPath();
+    ctx.moveTo(-6, -8 + i*8);
+    ctx.lineTo(-22, -4 + i*8);
+    ctx.lineTo(-6, 0 + i*8);
+    ctx.fill();
+  }
+  // face (peach)
+  ctx.fillStyle = '#ffd9a0';
+  ctx.beginPath();
+  ctx.arc(7, 2, 8, 0, Math.PI*2);
+  ctx.fill();
+  // eyes
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(8, -1, 4, 6, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(10, 0, 2, 0, Math.PI*2); ctx.fill();
+  // nose
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(15, 4, 2.5, 0, Math.PI*2); ctx.fill();
+  // shoes (red) with run animation
+  ctx.fillStyle = '#e53935';
+  const step = player.onGround && Math.abs(player.vx) > 0.5 ? Math.sin(Date.now()*0.02)*4 : 0;
+  ctx.beginPath(); ctx.ellipse(2, 15, 7, 4, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(8+step, 15, 7, 4, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(-2, 14, 10, 2);
+
+  ctx.restore();
+}
+
+function drawGoal(sx) {
+  if (!goal) return;
+  // flagpole sits at the '|' column drawn from MAP; we render a tall pole near goal
+  const px = goal.x - sx + 8;
+  // pole
+  ctx.fillStyle = '#bdbdbd';
+  ctx.fillRect(px, 4*TILE, 6, LEVEL_H - 5*TILE);
+  ctx.fillStyle = '#4caf50';
+  ctx.beginPath();
+  ctx.arc(px+3, 4*TILE, 7, 0, Math.PI*2);
+  ctx.fill();
+  // flag with a checker (Sonic goalpost vibe)
+  const wave = Math.sin(Date.now()*0.005)*4;
+  ctx.fillStyle = '#1976d2';
+  ctx.beginPath();
+  ctx.moveTo(px+6, 4*TILE+6);
+  ctx.lineTo(px+44+wave, 4*TILE+18);
+  ctx.lineTo(px+6, 4*TILE+30);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 12px Courier New';
+  ctx.textAlign = 'left';
+  ctx.fillText('GOAL', px+12, 4*TILE+22);
+}
+
+function render() {
+  const sx = Math.floor(cameraX);
+
+  // sky gradient
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#5c94fc');
+  g.addColorStop(1, '#9bc1ff');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // parallax background
+  const px = sx * 0.3;
+  drawHill(180 - px % (LEVEL_W), H - 2*TILE, 1.6);
+  drawHill(620 - px % (LEVEL_W), H - 2*TILE, 1.2);
+  drawHill(1100 - px % (LEVEL_W), H - 2*TILE, 1.8);
+  drawCloud(150 - (sx*0.5) % (LEVEL_W+200), 90, 1.0);
+  drawCloud(520 - (sx*0.5) % (LEVEL_W+200), 60, 0.8);
+  drawCloud(900 - (sx*0.5) % (LEVEL_W+200), 110, 1.2);
+  drawCloud(1300 - (sx*0.5) % (LEVEL_W+200), 80, 0.9);
+  // bushes near ground
+  for (let i=0;i<8;i++) drawBush(i*420 - (sx*0.6) % (LEVEL_W), H - 2*TILE + 6, 1.1);
+
+  drawGoal(sx);
+
+  // tiles
+  for (const s of solids) drawTile(s, sx);
+
+  // rings
+  for (const r of rings) if (!r.taken) drawRing(r, sx);
+
+  // enemies
+  for (const en of enemies) if (en.alive) drawEnemy(en, sx);
+
+  // player
+  drawSonic(sx);
+
+  // floating message
+  if (messageTimer > 0) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    const tw = ctx.measureText(message).width;
+    ctx.font = 'bold 20px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText(message, W/2, 60);
+  }
+
+  if (player.win) {
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0, H/2-50, W, 100);
+    ctx.fillStyle = '#ffd700';
+    ctx.font = 'bold 34px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('LEVEL CLEAR!', W/2, H/2);
+    ctx.fillStyle = '#fff';
+    ctx.font = '16px Courier New';
+    ctx.fillText('Rings: ' + ringCount + '   Time bonus: ' + timeLeft + '   Press R to replay', W/2, H/2+30);
+  }
+
+  if (player.dead) {
+    ctx.fillStyle = 'rgba(120,0,0,0.35)';
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // update HUD text
+  elRings.textContent = String(ringCount).padStart(3, '0');
+  elLives.textContent = lives;
+  elTime.textContent = Math.max(0, timeLeft);
+}
+
+// ---------------------------------------------------------------------------
+// MAIN LOOP
+// ---------------------------------------------------------------------------
+function loop() {
+  update();
+  render();
+  requestAnimationFrame(loop);
+}
+loop();
+
+})();
+</script>
+</body>
+</html>
