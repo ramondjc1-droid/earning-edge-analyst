@@ -43,6 +43,12 @@ CREATE TABLE IF NOT EXISTS skips (
     skip_date       TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS run_log (
+    stage           TEXT NOT NULL,
+    run_date        TEXT NOT NULL,
+    created_at      TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_picks_date ON picks(pick_date);
 CREATE INDEX IF NOT EXISTS idx_picks_ticker ON picks(ticker);
 """
@@ -126,6 +132,24 @@ def skips_for_today() -> set[str]:
             (date.today().isoformat(),),
         ).fetchall()
     return {r["ticker"] for r in rows}
+
+
+def already_ran_today(stage: str) -> bool:
+    """True if ``stage`` has already been logged as run today (idempotency)."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM run_log WHERE stage = ? AND run_date = ? LIMIT 1",
+            (stage, date.today().isoformat()),
+        ).fetchone()
+    return row is not None
+
+
+def log_run(stage: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO run_log (stage, run_date, created_at) VALUES (?,?,?)",
+            (stage, date.today().isoformat(), datetime.utcnow().isoformat()),
+        )
 
 
 def insert_grade(grade: dict) -> int:

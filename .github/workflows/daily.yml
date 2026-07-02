@@ -52,4 +52,10 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run stage
-        run: python scripts/dispatch.py ${{ github.event.inputs.stage }}
+        # Key off which cron fired (github.event.schedule) — GitHub delays
+        # scheduled runs by hours, so wall-clock time is unreliable. For manual
+        # runs, github.event.inputs.stage forces a specific stage.
+        run: >
+          python scripts/dispatch.py
+          --schedule "${{ github.event.schedule }}"
+          --stage "${{ github.event.inputs.stage }}"
