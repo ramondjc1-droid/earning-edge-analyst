@@ -33,7 +33,8 @@ def pick_card(ps: PlayScore, narrative: str) -> str:
         "",
         f"💵 Price: <b>${d.price:,.2f}</b>  ·  {_tier(d.price)}",
     ]
-    if d.earnings_date:
+    # Only show an earnings date that is actually upcoming (skip stale/past ones).
+    if d.earnings_date and (d.days_to_earnings is None or d.days_to_earnings >= 0):
         when = f"{d.earnings_date}"
         if d.days_to_earnings is not None:
             when += f" (in {d.days_to_earnings}d)"
