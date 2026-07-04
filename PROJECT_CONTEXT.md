@@ -50,12 +50,18 @@ Global gates: `min_confidence_to_send`, `max_picks_per_day`, `min_avg_volume`,
   never breaks.
 
 ## Known approximations / limitations
-- `iv_rank` is a proxy (current ATM IV vs realized-vol range), not a true
-  52-week IV percentile — Yahoo doesn't provide IV history.
+- `iv_rank` starts as a proxy (current ATM IV vs realized-vol range). Each
+  morning scan records every ticker's observed ATM IV in `iv_history`; once a
+  name has 10+ observations, `iv_rank` becomes a true percentile of the name's
+  own IV history and keeps improving as data accumulates.
+- Earnings dates are cross-checked across both yfinance sources; dates the
+  sources don't agree on are marked ⚠️ unconfirmed and score-discounted (×0.85)
+  for the timing-sensitive plays. Past/implausible dates are rejected.
 - `analyst_drift` is a coarse tilt from the recommendation mean.
-- Grading marks-to-market on close price vs entry; it does not model the actual
-  options structure of `IV_CRUSH`/`PRE_RUNUP` plays — treat P&L as a directional
-  proxy, not a backtest.
+- Grading is thesis-aware per play type (see `grader.py`): IV_CRUSH is graded
+  on IV collapse vs price blow-through at 1 day post-report, PRE_RUNUP on
+  drift at 1 day pre-report, momentum plays on follow-through. Still a proxy
+  for real option P&L, but directionally honest per thesis.
 
 ## Persistence (`data/picks.db`)
 - `picks` — every pick with metrics JSON, narrative, sent flag.

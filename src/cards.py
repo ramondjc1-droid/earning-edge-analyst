@@ -38,6 +38,8 @@ def pick_card(ps: PlayScore, narrative: str) -> str:
         when = f"{d.earnings_date}"
         if d.days_to_earnings is not None:
             when += f" (in {d.days_to_earnings}d)"
+        if not d.earnings_date_confirmed:
+            when += " ⚠️ unconfirmed"
         lines.append(f"📅 Earnings: <b>{when}</b>")
     lines.append(
         f"📊 IV-rank: <b>{d.iv_rank:.0f}</b> · Mom20d: <b>{d.momentum_20d:+.1f}%</b> "

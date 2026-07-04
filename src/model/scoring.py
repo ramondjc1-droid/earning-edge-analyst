@@ -85,6 +85,9 @@ def score_pre_runup(d: TickerData) -> PlayScore:
     # Normalize by sum of positive weights so score lands in a sane 0-1 band
     denom = sum(abs(v) for v in w.values()) or 1.0
     score = _clip01((raw + abs(min(0, sum(v for v in w.values() if v < 0)))) / denom)
+    # Timing-sensitive play: discount when the earnings date is single-source.
+    if not d.earnings_date_confirmed:
+        score *= 0.85
     return PlayScore(d.ticker, "PRE_RUNUP", score, _to_confidence(score),
                      contributions, d)
 
@@ -108,6 +111,9 @@ def score_iv_crush(d: TickerData) -> PlayScore:
     # Hard gate: IV rank must clear the configured floor
     if d.iv_rank < cfg.get("min_iv_rank", 50):
         score *= 0.3
+    # Timing-sensitive play: discount when the earnings date is single-source.
+    if not d.earnings_date_confirmed:
+        score *= 0.85
     return PlayScore(d.ticker, "IV_CRUSH", score, _to_confidence(score),
                      contributions, d)
 

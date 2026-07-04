@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -48,6 +48,14 @@ CREATE TABLE IF NOT EXISTS run_log (
     run_date        TEXT NOT NULL,
     created_at      TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS iv_history (
+    ticker          TEXT NOT NULL,
+    obs_date        TEXT NOT NULL,
+    iv_atm          REAL NOT NULL,
+    UNIQUE(ticker, obs_date)
+);
+CREATE INDEX IF NOT EXISTS idx_iv_ticker ON iv_history(ticker);
 
 CREATE INDEX IF NOT EXISTS idx_picks_date ON picks(pick_date);
 CREATE INDEX IF NOT EXISTS idx_picks_ticker ON picks(ticker);
@@ -169,6 +177,52 @@ def insert_grade(grade: dict) -> int:
             ),
         )
         return cur.lastrowid
+
+
+def record_iv(ticker: str, iv_atm: float, obs_date: Optional[str] = None) -> None:
+    """Log today's observed ATM IV for a ticker (one observation per day)."""
+    if iv_atm <= 0:
+        return
+    obs_date = obs_date or date.today().isoformat()
+    with connect() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO iv_history (ticker, obs_date, iv_atm) "
+            "VALUES (?,?,?)",
+            (ticker.upper(), obs_date, iv_atm),
+        )
+
+
+def iv_percentile(ticker: str, iv_atm: float, min_obs: int = 10,
+                  window_days: int = 365) -> Optional[float]:
+    """Percentile (0-100) of ``iv_atm`` within the name's own IV history.
+
+    Returns None until at least ``min_obs`` observations exist — callers fall
+    back to the IV/RV proxy during the cold-start period.
+    """
+    cutoff = (date.today() - timedelta(days=window_days)).isoformat()
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT iv_atm FROM iv_history WHERE ticker = ? AND obs_date >= ?",
+            (ticker.upper(), cutoff),
+        ).fetchall()
+    if len(rows) < min_obs:
+        return None
+    values = [r["iv_atm"] for r in rows]
+    below = sum(1 for v in values if v < iv_atm)
+    return below / len(values) * 100.0
+
+
+def ungraded_picks(max_age_days: int = 30) -> list[sqlite3.Row]:
+    """Picks with no grade yet, newest-first, bounded to a sane window."""
+    cutoff = (date.today() - timedelta(days=max_age_days)).isoformat()
+    with connect() as conn:
+        return conn.execute(
+            """SELECT p.* FROM picks p
+               LEFT JOIN grades g ON g.pick_id = p.id
+               WHERE g.id IS NULL AND p.pick_date >= ?
+               ORDER BY p.pick_date DESC""",
+            (cutoff,),
+        ).fetchall()
 
 
 def pnl_since(since_iso: str) -> list[sqlite3.Row]:

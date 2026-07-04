@@ -51,6 +51,19 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Runners are ephemeral; the SQLite DB (picks, grades, IV history,
+      # run-log idempotency) must survive between runs. Restore the most
+      # recent cache and save under a fresh key each run (cache keys are
+      # immutable, so a per-run key + prefix restore is the standard pattern
+      # for an evolving file).
+      - name: Restore picks database
+        uses: actions/cache/restore@v4
+        with:
+          path: data/picks.db
+          key: picks-db-${{ github.run_id }}
+          restore-keys: |
+            picks-db-
+
       - name: Run stage
         # Key off which cron fired (github.event.schedule) — GitHub delays
         # scheduled runs by hours, so wall-clock time is unreliable. For manual
@@ -59,3 +72,10 @@ jobs:
           python scripts/dispatch.py
           --schedule "${{ github.event.schedule }}"
           --stage "${{ github.event.inputs.stage }}"
+
+      - name: Save picks database
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/picks.db
+          key: picks-db-${{ github.run_id }}

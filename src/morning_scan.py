@@ -35,6 +35,22 @@ def run(dry_run: bool = False, lookahead: int = 21, verbose: bool = True) -> lis
 
     # One fetch pass; reused for both earnings and trending selection.
     pool = cal.fetch_all(skip=skip)
+
+    # Accumulate real IV history and upgrade iv_rank to a true percentile of
+    # the name's own IV once enough observations exist (cold start: the
+    # IV/RV proxy from the fetcher stands until then).
+    upgraded = 0
+    for td in pool:
+        if td.iv_atm > 0:
+            db.record_iv(td.ticker, td.iv_atm)
+            pct = db.iv_percentile(td.ticker, td.iv_atm)
+            if pct is not None:
+                td.iv_rank = pct
+                td.extras["iv_rank_source"] = "history"
+                upgraded += 1
+    if verbose and upgraded:
+        print(f"[scan] {upgraded} tickers using history-based IV rank.")
+
     candidates = cal.upcoming_earnings(lookahead_days=lookahead, prefetched=pool)
     if verbose:
         print(f"[scan] {len(pool)} tickers resolved; "

@@ -22,8 +22,17 @@ def _high_iv_name() -> TickerData:
         momentum_20d=4.2, momentum_5d=1.1, realized_vol=0.28, iv_atm=0.55,
         iv_rank=100.0, iv_vs_historical=1.96, beta=1.15, days_to_earnings=2,
         earnings_date=(date.today() + timedelta(days=2)).isoformat(),
+        earnings_date_confirmed=True,
         earnings_surprise_pct=6.4,
     )
+
+
+def test_unconfirmed_date_scores_lower():
+    confirmed = scoring.best_play(_high_iv_name())
+    d = _high_iv_name()
+    d.earnings_date_confirmed = False
+    unconfirmed = scoring.best_play(d)
+    assert unconfirmed.score < confirmed.score
 
 
 def test_high_iv_picks_iv_crush():
@@ -96,6 +105,55 @@ def test_metrics_json_roundtrips():
     d = _high_iv_name()
     blob = json.dumps(d.as_dict(), default=str)
     assert json.loads(blob)["ticker"] == "FDX"
+
+
+def test_iv_history_percentile():
+    import db
+    from datetime import timedelta as td_
+    db.init_db()
+    tkr = "TESTIV"
+    # Below min_obs -> None (cold start falls back to proxy)
+    db.record_iv(tkr, 0.30)
+    assert db.iv_percentile(tkr, 0.30) is None
+    # Seed 20 observations from 0.20 rising to 0.39
+    for i in range(20):
+        db.record_iv(tkr, 0.20 + i * 0.01,
+                     obs_date=(date.today() - td_(days=i + 1)).isoformat())
+    high = db.iv_percentile(tkr, 0.50)
+    low = db.iv_percentile(tkr, 0.10)
+    assert high is not None and high > 90
+    assert low is not None and low < 10
+    # Cleanup so reruns stay deterministic
+    with db.connect() as conn:
+        conn.execute("DELETE FROM iv_history WHERE ticker = ?", (tkr,))
+
+
+def test_grader_thesis_logic():
+    import grader
+
+    # IV_CRUSH: IV collapses, small move -> WIN even if the stock dipped
+    pnl, outcome, _ = grader.grade_play("IV_CRUSH", 100.0, 97.0, 0.60, 0.40)
+    assert outcome == "WIN" and pnl < 0
+    # IV_CRUSH: big blow-through move -> LOSS even though IV dropped
+    _, outcome, _ = grader.grade_play("IV_CRUSH", 100.0, 112.0, 0.60, 0.40)
+    assert outcome == "LOSS"
+    # PRE_RUNUP: drift up -> WIN
+    _, outcome, _ = grader.grade_play("PRE_RUNUP", 100.0, 103.0, 0, 0)
+    assert outcome == "WIN"
+    # MOMENTUM: reversal -> LOSS
+    _, outcome, _ = grader.grade_play("MOMENTUM", 100.0, 95.0, 0, 0)
+    assert outcome == "LOSS"
+
+
+def test_grader_exit_dates():
+    import grader
+    picked = date(2026, 7, 1)
+    reports = date(2026, 7, 10)
+    assert grader.exit_date("PRE_RUNUP", picked, reports) == date(2026, 7, 9)
+    assert grader.exit_date("IV_CRUSH", picked, reports) == date(2026, 7, 11)
+    assert grader.exit_date("MOMENTUM", picked, None) == date(2026, 7, 6)
+    # Earnings plays without a date can't be graded yet
+    assert grader.exit_date("IV_CRUSH", picked, None) is None
 
 
 if __name__ == "__main__":

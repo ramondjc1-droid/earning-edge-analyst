@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field, asdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 import numpy as np
@@ -38,6 +38,7 @@ class TickerData:
     beta: float = 1.0
     days_to_earnings: Optional[int] = None
     earnings_date: Optional[str] = None
+    earnings_date_confirmed: bool = False  # True when both yf sources agree
     earnings_surprise_pct: Optional[float] = None
     gap_pct: float = 0.0             # most recent overnight gap
     analyst_drift: float = 0.0       # proxy for estimate revisions / recos
@@ -62,19 +63,35 @@ def _pct_change(closes: np.ndarray, lookback: int) -> float:
     return float((closes[-1] / closes[-1 - lookback] - 1.0) * 100.0)
 
 
-def _next_earnings_date(tk) -> Optional[date]:
-    """Best-effort next earnings date across yfinance API variations."""
-    # Newer yfinance: get_earnings_dates()
+def _next_earnings_date(tk) -> tuple[Optional[date], bool]:
+    """Best-effort next earnings date, cross-checked across both yfinance
+    sources.
+
+    Returns (date, confirmed). ``confirmed`` is True only when the earnings-
+    history table and the calendar endpoint agree within a few days — dates
+    from a single source are usable but flagged so scoring can discount them.
+    Past dates and dates implausibly far out (>120d) are rejected outright;
+    yfinance sometimes returns a trailing report as "next".
+    """
+    today = date.today()
+
+    def _valid(d: Optional[date]) -> Optional[date]:
+        if d and today <= d <= today + timedelta(days=120):
+            return d
+        return None
+
+    from_history: Optional[date] = None
     try:
         df = tk.get_earnings_dates(limit=12)
         if df is not None and not df.empty:
             now = datetime.now(timezone.utc)
             future = [idx for idx in df.index if idx.to_pydatetime() >= now]
             if future:
-                return min(future).date()
+                from_history = _valid(min(future).date())
     except Exception:
         pass
-    # Calendar fallback
+
+    from_calendar: Optional[date] = None
     try:
         cal = tk.calendar
         if isinstance(cal, dict):
@@ -82,10 +99,19 @@ def _next_earnings_date(tk) -> Optional[date]:
             if isinstance(ed, (list, tuple)) and ed:
                 ed = ed[0]
             if ed:
-                return ed if isinstance(ed, date) else ed.date()
+                from_calendar = _valid(ed if isinstance(ed, date) else ed.date())
     except Exception:
         pass
-    return None
+
+    if from_history and from_calendar:
+        if abs((from_history - from_calendar).days) <= 4:
+            # Calendar tends to carry the company-announced date; prefer it.
+            return from_calendar, True
+        # Sources disagree badly — take the earlier (safer for pre-earnings
+        # plays: better to exit early than hold through a surprise report).
+        return min(from_history, from_calendar), False
+    single = from_history or from_calendar
+    return (single, False) if single else (None, False)
 
 
 def _earnings_surprise(tk) -> Optional[float]:
@@ -194,10 +220,11 @@ def fetch(ticker: str) -> TickerData:
         except Exception:
             td.beta = 1.0
 
-        ed = _next_earnings_date(tk)
+        ed, confirmed = _next_earnings_date(tk)
         if ed:
             td.earnings_date = ed.isoformat()
             td.days_to_earnings = (ed - date.today()).days
+            td.earnings_date_confirmed = confirmed
         td.earnings_surprise_pct = _earnings_surprise(tk)
         td.analyst_drift = _analyst_drift(tk)
 
