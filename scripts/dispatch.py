@@ -33,10 +33,11 @@ except Exception:  # pragma: no cover
     ET = None
 
 # Cron line (as written in .github/workflows/daily.yml) -> stage script.
+# Must match daily.yml exactly — the cron string is the routing key.
 SCHEDULE_MAP = {
-    "0 11,12 * * 1-5": "morning_scan.py",
-    "30 13,14 * * 1-5": "market_open_check.py",
-    "30 20,21 * * 1-5": "post_market_update.py",
+    "0 11,12,13 * * 1-5": "morning_scan.py",
+    "30 13,14,15 * * 1-5": "market_open_check.py",
+    "30 20,21,22 * * 1-5": "post_market_update.py",
     "0 22,23 * * 1-5": "grader.py",
 }
 

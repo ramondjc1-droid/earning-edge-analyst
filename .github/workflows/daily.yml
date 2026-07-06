@@ -13,10 +13,14 @@ name: Earnings Edge — Daily Scans
 
 on:
   schedule:
-    - cron: "0 11,12 * * 1-5"     # morning_scan
-    - cron: "30 13,14 * * 1-5"    # market_open_check
-    - cron: "30 20,21 * * 1-5"    # post_market_update
-    - cron: "0 22,23 * * 1-5"     # grader
+    # Each stage lists an extra catch-up hour: GitHub's scheduler is
+    # best-effort and sometimes drops a fire outright (observed Mon Jul 6).
+    # Persistent per-day idempotency in dispatch.py makes extra fires no-ops
+    # when an earlier one already ran.
+    - cron: "0 11,12,13 * * 1-5"    # morning_scan (+13:00 catch-up)
+    - cron: "30 13,14,15 * * 1-5"   # market_open_check (+15:30 catch-up)
+    - cron: "30 20,21,22 * * 1-5"   # post_market_update (+22:30 catch-up)
+    - cron: "0 22,23 * * 1-5"       # grader
   workflow_dispatch:
     inputs:
       stage:
