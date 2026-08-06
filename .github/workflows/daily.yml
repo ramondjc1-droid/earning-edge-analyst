@@ -29,7 +29,12 @@ on:
         default: ""
 
 concurrency:
-  group: earnings-edge-daily
+  # Scope the group per stage. A shared group meant a slow morning scan could
+  # block (and GitHub could then cancel) the market-open check queued behind
+  # it — surfacing as a spurious red "failure" for a run that never executed.
+  # Redundant same-stage catch-up fires still serialize, and dispatch.py's
+  # per-day idempotency no-ops them.
+  group: earnings-edge-${{ github.event.schedule || github.event.inputs.stage || 'manual' }}
   cancel-in-progress: false
 
 jobs:

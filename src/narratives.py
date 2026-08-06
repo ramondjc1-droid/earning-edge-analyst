@@ -24,6 +24,14 @@ SYSTEM = (
 )
 
 
+def iv_label(d) -> str:
+    """Name the IV-rank basis honestly: a real percentile once enough IV
+    history has accumulated for that ticker, the IV/RV proxy before then."""
+    if d.extras.get("iv_rank_source") == "history":
+        return "IV-rank"
+    return "IV-rank proxy"
+
+
 def _fallback(ps: PlayScore) -> str:
     d = ps.data
     blurb = _PLAY_BLURB.get(ps.play_type, ps.play_type)
@@ -40,7 +48,7 @@ def _fallback(ps: PlayScore) -> str:
         f"${d.ticker} screens as a {ps.play_type} setup (confidence {ps.confidence}/10). "
         f"The play: {blurb}.{when}"
         f" Context: 20-day momentum {d.momentum_20d:+.1f}%, relative volume "
-        f"{d.rel_volume:.1f}x, IV-rank proxy {d.iv_rank:.0f}. "
+        f"{d.rel_volume:.1f}x, {iv_label(d)} {d.iv_rank:.0f}. "
         "Informational only — not financial advice."
     )
 
@@ -61,7 +69,7 @@ def generate(ps: PlayScore) -> str:
             f"Earnings date: {d.earnings_date} (in {d.days_to_earnings} days)\n"
             f"20d momentum: {d.momentum_20d:+.1f}%  5d momentum: {d.momentum_5d:+.1f}%\n"
             f"Relative volume: {d.rel_volume:.1f}x  Avg volume: {d.avg_volume:,.0f}\n"
-            f"IV-rank proxy: {d.iv_rank:.0f}  IV/RV: {d.iv_vs_historical:.2f}  Beta: {d.beta:.2f}\n"
+            f"{iv_label(d)}: {d.iv_rank:.0f}  IV/RV: {d.iv_vs_historical:.2f}  Beta: {d.beta:.2f}\n"
             f"Last earnings surprise: {d.earnings_surprise_pct}\n"
             f"Score breakdown: {ps.rationale}\n"
         )
